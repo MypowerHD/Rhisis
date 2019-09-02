@@ -73,55 +73,51 @@ namespace Rhisis.World.Systems.Inventory
                 {
                     Item inventoryItem = player.Inventory.Items[i];
 
-                    if (inventoryItem.Id == item.Id)
+                    if (inventoryItem.Id != item.Id) continue;
+                    if (inventoryItem.Quantity + quantity > item.Data.PackMax)
                     {
-                        if (inventoryItem.Quantity + quantity > item.Data.PackMax)
-                        {
-                            int boughtQuantity = inventoryItem.Data.PackMax - inventoryItem.Quantity;
+                        int boughtQuantity = inventoryItem.Data.PackMax - inventoryItem.Quantity;
 
-                            createdAmount = boughtQuantity;
-                            quantity -= boughtQuantity;
-                            inventoryItem.Quantity = inventoryItem.Data.PackMax;
-                        }
-                        else
-                        {
-                            createdAmount = quantity;
-                            inventoryItem.Quantity += quantity;
-                            quantity = 0;
-                        }
-
-                        if (sendToPlayer)
-                            this._inventoryPacketFactory.SendItemUpdate(player, UpdateItemType.UI_NUM, inventoryItem.UniqueId, inventoryItem.Quantity);
-                    }
-                }
-
-                if (quantity > 0)
-                {
-                    if (!player.Inventory.HasAvailableSlots())
-                    {
-                        this._textPacketFactory.SendDefinedText(player, DefineText.TID_GAME_LACKSPACE);
+                        createdAmount = boughtQuantity;
+                        quantity -= boughtQuantity;
+                        inventoryItem.Quantity = inventoryItem.Data.PackMax;
                     }
                     else
                     {
-                        int availableSlot = player.Inventory.GetAvailableSlot();
-
-                        Item newItem = this._itemFactory.CreateItem(item.Id, item.Refine, item.Element, item.ElementRefine, creatorId);
-
-                        if (newItem == null)
-                        {
-                            throw new ArgumentNullException(nameof(newItem));
-                        }
-
-                        newItem.Quantity = quantity;
-                        newItem.UniqueId = player.Inventory[availableSlot].UniqueId;
-                        newItem.Slot = availableSlot;
-                        player.Inventory[availableSlot] = newItem;
-
-                        if (sendToPlayer)
-                            this._inventoryPacketFactory.SendItemCreation(player, newItem);
-
-                        createdAmount += quantity;
+                        createdAmount = quantity;
+                        inventoryItem.Quantity += quantity;
+                        quantity = 0;
                     }
+
+                    if (sendToPlayer)
+                        this._inventoryPacketFactory.SendItemUpdate(player, UpdateItemType.UI_NUM, inventoryItem.UniqueId, inventoryItem.Quantity);
+                }
+
+                if (quantity <= 0) return createdAmount;
+                if (!player.Inventory.HasAvailableSlots())
+                {
+                    this._textPacketFactory.SendDefinedText(player, DefineText.TID_GAME_LACKSPACE);
+                }
+                else
+                {
+                    int availableSlot = player.Inventory.GetAvailableSlot();
+
+                    Item newItem = this._itemFactory.CreateItem(item.Id, item.Refine, item.Element, item.ElementRefine, creatorId);
+
+                    if (newItem == null)
+                    {
+                        throw new ArgumentNullException(nameof(newItem));
+                    }
+
+                    newItem.Quantity = quantity;
+                    newItem.UniqueId = player.Inventory[availableSlot].UniqueId;
+                    newItem.Slot = availableSlot;
+                    player.Inventory[availableSlot] = newItem;
+
+                    if (sendToPlayer)
+                        this._inventoryPacketFactory.SendItemCreation(player, newItem);
+
+                    createdAmount += quantity;
                 }
             }
             else
@@ -192,7 +188,7 @@ namespace Rhisis.World.Systems.Inventory
         /// <inheritdoc />
         public void MoveItem(IPlayerEntity player, byte sourceSlot, byte destinationSlot, bool sendToPlayer = true)
         {
-            if (sourceSlot < 0 || sourceSlot >= MaxItems)
+            if(sourceSlot < 0 || sourceSlot >= MaxItems)
             {
                 throw new InvalidOperationException("Source slot is out of inventory range.");
             }
@@ -264,30 +260,26 @@ namespace Rhisis.World.Systems.Inventory
 
             if (shouldEquip)
             {
-                if (this.IsItemEquipable(player, itemToEquip))
-                {
-                    int sourceSlot = itemToEquip.Slot;
-                    int equipSlot = itemToEquip.Data.Parts + EquipOffset;
+                if (!this.IsItemEquipAble(player, itemToEquip)) return;
+                int sourceSlot = itemToEquip.Slot;
+                int equipSlot = itemToEquip.Data.Parts + EquipOffset;
 
-                    this.MoveItem(player, (byte)sourceSlot, (byte)equipSlot, sendToPlayer: false);
-                    this.MoveItem(player, (byte)sourceSlot, (byte)player.Inventory.GetAvailableSlot(), sendToPlayer: false);
-                    this._inventoryPacketFactory.SendItemEquip(player, itemToEquip, itemToEquip.Data.Parts, true);
-                }
+                this.MoveItem(player, (byte)sourceSlot, (byte)equipSlot, sendToPlayer: false);
+                this.MoveItem(player, (byte)sourceSlot, (byte)player.Inventory.GetAvailableSlot(), sendToPlayer: false);
+                this._inventoryPacketFactory.SendItemEquip(player, itemToEquip, itemToEquip.Data.Parts, true);
             }
             else
             {
-                if (itemToEquip.IsEquipped())
+                if (!itemToEquip.IsEquipped()) return;
+                int targetPart = Math.Abs(itemToEquip.Slot - EquipOffset);
+
+                if (equipPart != targetPart)
                 {
-                    int targetPart = Math.Abs(itemToEquip.Slot - EquipOffset);
-
-                    if (equipPart != targetPart)
-                    {
-                        throw new InvalidOperationException($"Equipement parts doesn't match.");
-                    }
-
-                    this.MoveItem(player, (byte)itemToEquip.Slot, (byte)player.Inventory.GetAvailableSlot(), sendToPlayer: false);
-                    this._inventoryPacketFactory.SendItemEquip(player, itemToEquip, targetPart, false);
+                    throw new InvalidOperationException($"Equipment parts doesn't match.");
                 }
+
+                this.MoveItem(player, (byte)itemToEquip.Slot, (byte)player.Inventory.GetAvailableSlot(), sendToPlayer: false);
+                this._inventoryPacketFactory.SendItemEquip(player, itemToEquip, targetPart, false);
             }
         }
 
@@ -305,7 +297,7 @@ namespace Rhisis.World.Systems.Inventory
             {
                 if (part >= MaxHumanParts)
                 {
-                    throw new InvalidOperationException($"Invalid equipement part.");
+                    throw new InvalidOperationException($"Invalid Equipment part.");
                 }
 
                 if (!player.Battle.IsFighting)
@@ -315,31 +307,99 @@ namespace Rhisis.World.Systems.Inventory
             }
             else
             {
-                if (itemToUse.Data.IsUseable && itemToUse.Quantity > 0)
+                if (!itemToUse.Data.IsUseable || itemToUse.Quantity <= 0) return;
+                this._logger.LogTrace($"{player.Object.Name} want to use {itemToUse.Data.Name}.");
+
+                if (player.Inventory.ItemHasCoolTime(itemToUse) && !player.Inventory.CanUseItemWithCoolTime(itemToUse))
                 {
-                    this._logger.LogTrace($"{player.Object.Name} want to use {itemToUse.Data.Name}.");
+                    this._logger.LogDebug($"Player '{player.Object.Name}' cannot use item {itemToUse.Data.Name}: CoolTime.");
+                    return;
+                }
 
-                    if (player.Inventory.ItemHasCoolTime(itemToUse) && !player.Inventory.CanUseItemWithCoolTime(itemToUse))
-                    {
-                        this._logger.LogDebug($"Player '{player.Object.Name}' cannot use item {itemToUse.Data.Name}: CoolTime.");
-                        return;
-                    }
-
-                    switch (itemToUse.Data.ItemKind2)
-                    {
-                        case ItemKind2.REFRESHER:
-                        case ItemKind2.POTION:
-                        case ItemKind2.FOOD:
-                            this._inventoryItemUsage.UseFoodItem(player, itemToUse);
-                            break;
-                        case ItemKind2.BLINKWING:
-                            this._inventoryItemUsage.UseBlinkwingItem(player, itemToUse);
-                            break;
-                        default:
-                            this._logger.LogDebug($"Item usage for {itemToUse.Data.ItemKind2} is not implemented.");
-                            this._textPacketFactory.SendSnoop(player, $"Item usage for {itemToUse.Data.ItemKind2} is not implemented.");
-                            break;
-                    }
+                switch (itemToUse.Data.ItemKind2)
+                {
+                    case ItemKind2.REFRESHER:
+                    case ItemKind2.POTION:
+                    case ItemKind2.FOOD:
+                        this._inventoryItemUsage.UseFoodItem(player, itemToUse);
+                        break;
+                    case ItemKind2.BLINKWING:
+                        this._inventoryItemUsage.UseBlinkWingItem(player, itemToUse);
+                        break;
+                    case ItemKind2.GOLD:
+                        break;
+                    case ItemKind2.WEAPON_HAND:
+                        break;
+                    case ItemKind2.WEAPON_DIRECT:
+                        break;
+                    case ItemKind2.WEAPON_MAGIC:
+                        break;
+                    case ItemKind2.ARMOR:
+                        break;
+                    case ItemKind2.ARMORETC:
+                        break;
+                    case ItemKind2.CLOTH:
+                        break;
+                    case ItemKind2.CLOTHETC:
+                        break;
+                    case ItemKind2.JEWELRY:
+                        break;
+                    case ItemKind2.MAGIC:
+                        break;
+                    case ItemKind2.GEM:
+                        break;
+                    case ItemKind2.MATERIAL:
+                        break;
+                    case ItemKind2.TOOLS:
+                        break;
+                    case ItemKind2.SYSTEM:
+                        break;
+                    case ItemKind2.RIDING:
+                        break;
+                    case ItemKind2.MOB:
+                        break;
+                    case ItemKind2.AIRFUEL:
+                        break;
+                    case ItemKind2.CHARM:
+                        break;
+                    case ItemKind2.BULLET:
+                        break;
+                    case ItemKind2.TEXT:
+                        break;
+                    case ItemKind2.GMTEXT:
+                        break;
+                    case ItemKind2.GENERAL:
+                        break;
+                    case ItemKind2.BUFF:
+                        break;
+                    case ItemKind2.WARP:
+                        break;
+                    case ItemKind2.SKILL:
+                        break;
+                    case ItemKind2.CLOTHWIG:
+                        break;
+                    case ItemKind2.BUFF2:
+                        break;
+                    case ItemKind2.FURNITURE:
+                        break;
+                    case ItemKind2.PAPERING:
+                        break;
+                    case ItemKind2.TOCASH:
+                        break;
+                    case ItemKind2.BUFF_TOGIFT:
+                        break;
+                    case ItemKind2.GUILDHOUSE_FURNITURE:
+                        break;
+                    case ItemKind2.GUILDHOUSE_NPC:
+                        break;
+                    case ItemKind2.GUILDHOUSE_PAPERING:
+                        break;
+                    case ItemKind2.GUILDHOUES_COMEBACK:
+                        break;
+                    default:
+                        this._logger.LogDebug($"Item usage for {itemToUse.Data.ItemKind2} is not implemented.");
+                        this._textPacketFactory.SendSnoop(player, $"Item usage for {itemToUse.Data.ItemKind2} is not implemented.");
+                        break;
                 }
             }
         }
@@ -356,14 +416,14 @@ namespace Rhisis.World.Systems.Inventory
 
             if (itemToDrop.Slot >= EquipOffset)
             {
-                throw new InvalidOperationException($"Cannot drop an equiped item.");
+                throw new InvalidOperationException($"Cannot drop an equipped item.");
             }
 
             int quantityToDrop = Math.Min(quantity, itemToDrop.Quantity);
 
             if (quantityToDrop <= 0)
             {
-                throw new InvalidOperationException("Cannot drop a zero or negative quantit.");
+                throw new InvalidOperationException("Cannot drop a zero or negative quantity.");
             }
 
             itemToDrop.Quantity = quantityToDrop;
@@ -377,7 +437,7 @@ namespace Rhisis.World.Systems.Inventory
         /// <param name="player">Player trying to equip an item.</param>
         /// <param name="item">Item to equip.</param>
         /// <returns>True if the player can equip the item; false otherwise.</returns>
-        public bool IsItemEquipable(IPlayerEntity player, Item item)
+        public bool IsItemEquipAble(IPlayerEntity player, Item item)
         {
             if (item.Data.ItemSex != int.MaxValue && item.Data.ItemSex != player.VisualAppearance.Gender)
             {
@@ -386,14 +446,11 @@ namespace Rhisis.World.Systems.Inventory
                 return false;
             }
 
-            if (player.Object.Level < item.Data.LimitLevel)
-            {
-                this._logger.LogDebug("Player level to low");
-                this._textPacketFactory.SendDefinedText(player, DefineText.TID_GAME_REQLEVEL, item.Data.LimitLevel.ToString());
-                return false;
-            }
+            if (player.Object.Level >= item.Data.LimitLevel) return true;
+            this._logger.LogDebug("Player level to low");
+            this._textPacketFactory.SendDefinedText(player, DefineText.TID_GAME_REQLEVEL, item.Data.LimitLevel.ToString());
+            return false;
 
-            return true;
         }
     }
 }

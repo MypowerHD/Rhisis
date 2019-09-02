@@ -91,7 +91,7 @@ namespace Rhisis.World.Systems.Inventory
             this.DecreaseItem(player, foodItemToUse);
         }
 
-        public void UseBlinkwingItem(IPlayerEntity player, Item blinkwing)
+        public void UseBlinkWingItem(IPlayerEntity player, Item blinkwing)
         {
             if (player.Object.Level < blinkwing.Data.LimitLevel)
             {
